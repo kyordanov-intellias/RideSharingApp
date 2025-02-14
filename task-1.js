@@ -37,14 +37,35 @@ class User {
     constructor(name, paymentDetails) {
         this.name = name;
         this.#paymentDetails = paymentDetails;
-        this.ratings = []
+        this.ratings = [];
+    };
+
+    update(ride) {
+        let icon;
+        switch (ride.status) {
+            case 'completed':
+                icon = '🤟🏻';
+                break;
+            case 'pending':
+                icon = '🕙';
+                break;
+            case 'active':
+                icon = '🚖🔜';
+                break;
+            default:
+                icon = ''
+                break;
+        };
+        console.log(`User Notification 📩 => ${this.name} received a ride update: Status is now "${ride.status}" ${icon}`);
     };
 
     //TODO - maybe add to RideSharingApp -> more logic
-    requestRide(pickupLocation, dropoffLocation) {
+    requestRide(pickupLocation, dropoffLocation, driver) {
         const ride = new Ride(this, pickupLocation, dropoffLocation);
-        const rideNotification = RideNotificationFacotry.createNotification(ride);
-        rideNotification.send();
+        ride.subscribeToObserver(this);
+        if (driver) {
+            ride.subscribeToObserver(driver);
+        }
         return ride;
     };
 
@@ -63,12 +84,31 @@ class Driver {
         this.ratings = [];
     };
 
+    update(ride) {
+        let icon;
+        switch (ride.status) {
+            case 'completed':
+                icon = '🙈';
+                break;
+            case 'pending':
+                icon = '🕙';
+                break;
+            case 'active':
+                icon = '🚖';
+                break;
+            default:
+                icon = ''
+                break;
+        }
+        console.log(`Driver Notification 📩 => ${this.name} received a ride update: Status is now "${ride.status}" ${icon}`);
+    };
+
     acceptRide(ride) {
         if (this.available) {
             ride.assignDriver(this);
-            const rideNotification = RideNotificationFacotry.createNotification(ride);
-            rideNotification.send();
             this.available = false;
+            ride.subscribeToObserver(this);
+            // ride.notifyObservers();
         };
     };
 
@@ -76,6 +116,19 @@ class Driver {
         const rating = new Rating(score, feedback);
         this.ratings.push(rating.submit());
         console.log(`${this.name} rated a user with a score of ${score}/5`);
+    };
+
+    showAverageRatinh() {
+        if (this.ratings.length > 0) {
+            let total = 0;
+            for (const rating of this.ratings) {
+                total += rating.score;
+            };
+            let avr = total / this.ratings.length;
+            console.log(`Average rating of ${this.name} is ${avr}`);
+        } else {
+            console.log(`The driven doesn't have score yet!`);
+        };
     };
 };
 
@@ -88,24 +141,44 @@ class Ride {
         this.status = 'pending';
         this.fare = this.calculateFare();
         this.driver = null;
-    }
+        this.observers = [];
+    };
 
     calculateFare() {
         return Math.random() * 50 + 10;
-    }
+    };
 
     assignDriver(driver) {
         this.driver = driver;
         this.status = 'active';
-    }
+        this.notifyObservers();
+    };
 
     completeRide() {
         this.status = 'completed';
         if (this.driver) {
             this.driver.available = true;
-        }
-    }
-}
+        };
+        this.notifyObservers();
+    };
+
+    subscribeToObserver(observer) {
+        if (!this.observers.includes(observer)) {
+            this.observers.push(observer);
+            observer.update(this);
+        };
+    };
+
+    unsubscribeFromObserver(observer) {
+        this.observers = this.observers.filter(obs => obs !== observer);
+    };
+
+    notifyObservers() {
+        for (const observer of this.observers) {
+            observer.update(this)
+        };
+    };
+};
 
 class PremiumUser extends User {
     constructor(name, paymentDetails, premiumBenefits) {
@@ -151,29 +224,8 @@ class Rating {
         return this;
     }
 }
-//-------------------->
-//-------------------->
-//-------------------->
 
-// class RideObserver {
-//     notify(ride) {
-//         console.log(`New ride requested: ${ride.pickupLocation} to ${ride.dropoffLocation}`);
-//     }
-// }
-
-// const rideObserver = new RideObserver();
-
-// class RideWithObserver extends Ride {
-//     constructor(user, pickupLocation, dropoffLocation) {
-//         super(user, pickupLocation, dropoffLocation);
-//         rideObserver.notify(this);
-//     }
-// }
-
-//-------------------->
-//-------------------->
-//-------------------->
-class RideNotificationFacotry {
+class RideNotificationFactory {
     static createNotification(ride) {
         if (ride.status === 'active') {
             return new ActiveRideNotification(ride);
@@ -211,6 +263,9 @@ class PendingRideNotification extends RideNotification {
 async function matchRide(user) {
     try {
         const availableDrivers = await getAvailableDrivers();
+        if (availableDrivers.length === 0) {
+            throw new Error('No available drivers at the moment');
+        }
         const driver = availableDrivers[0];
         const ride = user.requestRide("Sofia", "Vidin");
 
@@ -218,10 +273,10 @@ async function matchRide(user) {
             driver.acceptRide(ride);
             const rideNotification = RideNotificationFacotry.createNotification(ride);
             rideNotification.send();
-        }, 1000)
+        }, 1000);
     } catch (error) {
-        throw new Error('Failed fetching available drivers...')
-    }
+        console.error('Error matching ride:', error);
+    };
 };
 
 async function getAvailableDrivers() {
@@ -238,17 +293,17 @@ async function getAvailableDrivers() {
 
 async function processPayment(user, ride) {
     try {
-        console.log(`Processing payment for ride from ${ride.pickupLocation} to ${ride.dropoffLocation} [${user.name}]`);
+        console.log(`🔄 Processing payment for ride from ${ride.pickupLocation} to ${ride.dropoffLocation} [${user.name}] 🔄`);
 
         const paymentSuccess = await simulatePaymentProcessing();
 
         if (paymentSuccess) {
-            console.log('Payment successful!');
+            console.log('✅ Payment successful! ✅');
             ride.completeRide();
-            const rideNotification = RideNotificationFacotry.createNotification(ride);
+            const rideNotification = RideNotificationFactory.createNotification(ride);
             rideNotification.send();
         } else {
-            console.log('Payment failed.');
+            console.log('❌ Payment failed. ❌ ');
             throw new Error('Payment failed');
         }
     } catch (error) {
@@ -270,7 +325,7 @@ async function simulatePaymentProcessing() {
 function test1() {
     const user1 = new User("John Doe", "1234-5678-9876-5432");
     const driver1 = new Driver("Alice", "Tesla Model S");
-    const ride1 = user1.requestRide("Main St", "Elm St");
+    const ride1 = user1.requestRide("Main St", "Elm St", driver1);;
     driver1.acceptRide(ride1);
     processPayment(user1, ride1);
 };
@@ -279,7 +334,7 @@ function test1() {
 function test2() {
     const user2 = new User("Jane Smith", "2345-6789-8765-4321");
     const driver2 = new Driver("Bob", "Ford Mustang");
-    const ride2 = user2.requestRide("Broadway", "5th Ave");
+    const ride2 = user2.requestRide("Broadway", "5th Ave", driver2);
     driver2.acceptRide(ride2);
     processPayment(user2, ride2);
 };
@@ -298,7 +353,7 @@ function test3() {
 function test4() {
     const vipDriver = new VIPDriver("Grace", "Audi Q7", true);
     const user3 = new User("Daniel Craig", "4567-8901-2345-6789");
-    const ride3 = user3.requestRide("King St", "Queen St");
+    const ride3 = user3.requestRide("King St", "Queen St", vipDriver);
     vipDriver.acceptVIPRide(ride3);
     processPayment(user3, ride3);
 };
@@ -309,7 +364,7 @@ function test5() {
     const user5 = new PremiumUser("LeBron James", "6789-0123-4567-8901", "Premium access");
     const driver4 = new Driver("Zoe", "Chevrolet Volt");
     const driver5 = new VIPDriver("Chris", "Porsche 911", true);
-    const ride4 = user4.requestRide("Liberty St", "Broadway");
+    const ride4 = user4.requestRide("Liberty St", "Broadway", driver4);
     const premiumRide2 = user5.requestPremiumRide("Wall St", "7th Ave");
     driver4.acceptRide(ride4);
     driver5.acceptVIPRide(premiumRide2);
@@ -318,8 +373,29 @@ function test5() {
 
 };
 
+// Test 6: Add rating to User or Driver
+function test6() {
+    const user1 = new User("Alice", "Visa");
+    const driver1 = new Driver("Bob", "Tesla Model 3");
+    user1.rateDriver(5, "Excellent ride, very friendly!");
+    driver1.rateUser(4, "User was nice, but a bit late.");
+    user1.rateDriver(3, "Driver was okay, but the car wasn't clean.");
+    driver1.rateUser(5, "Great user, very punctual!");
+    driver1.showAverageRatinh();
+}
+
+function test7() {
+    const user = new User('Alice', 'paymentDetails');
+    const driver = new Driver('Bob', 'Tesla Model 3');
+    const ride = user.requestRide('Sofia', 'Vidin', driver);
+    driver.acceptRide(ride);
+    ride.completeRide();
+};
+
 // test1();
 // test2();
-test3();
+// test3();
 // test4();
 // test5();
+// test6();
+test7();
