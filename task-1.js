@@ -63,11 +63,24 @@ class User {
     requestRide(pickupLocation, dropoffLocation, driver) {
         const ride = new Ride(this, pickupLocation, dropoffLocation);
         ride.subscribeToObserver(this);
-        if (driver) {
+
+        if (driver.available) {
             ride.subscribeToObserver(driver);
-        }
+        } else {
+            throw new Error(`${driver.name} is already on a ride! Please, wait for another driver to accept your ride.`);
+        };
         return ride;
     };
+
+    giveTip(ride, amount) {
+        if (amount >= 0) {
+            ride.tip = amount;
+            console.log(`${this.name} gave a tip of $${amount.toFixed(2)} for this ride.`);
+            ride.notifyObservers();
+        } else {
+            console.log("Invalid tip amount.");
+        }
+    }
 
     rateDriver(score, feedback) {
         const rating = new Rating(score, feedback);
@@ -107,8 +120,8 @@ class Driver {
         if (this.available) {
             ride.assignDriver(this);
             this.available = false;
-            ride.subscribeToObserver(this);
-            // ride.notifyObservers();
+        } else {
+            console.log(`${this.name} is already on a ride!`);
         };
     };
 
@@ -142,6 +155,7 @@ class Ride {
         this.fare = this.calculateFare();
         this.driver = null;
         this.observers = [];
+        this.tip = 0;
     };
 
     calculateFare() {
@@ -160,6 +174,7 @@ class Ride {
             this.driver.available = true;
         };
         this.notifyObservers();
+        this.observers.forEach(observer => this.unsubscribeFromObserver(observer));
     };
 
     subscribeToObserver(observer) {
@@ -171,7 +186,7 @@ class Ride {
 
     unsubscribeFromObserver(observer) {
         this.observers = this.observers.filter(obs => obs !== observer);
-    };
+    }
 
     notifyObservers() {
         for (const observer of this.observers) {
@@ -251,6 +266,12 @@ class ActiveRideNotification extends RideNotification {
 class CompletedRideNotification extends RideNotification {
     send() {
         console.log(`Ride completed notification for ${this.ride.user.name} by ${this.ride.driver.name} with ${this.ride.driver.carDetails}. Fare: $${this.ride.fare.toFixed(2)}`);
+        if (this.ride.tip > 0) {
+            console.log(`Tip for rider: $${this.ride.tip.toFixed(2)}`);
+        } else {
+            console.log(`${this.ride.user.name} didn't tip ${this.ride.driver.name} for the ride! :(`);
+
+        }
     };
 };
 
@@ -266,18 +287,22 @@ async function matchRide(user) {
         if (availableDrivers.length === 0) {
             throw new Error('No available drivers at the moment');
         }
+
         const driver = availableDrivers[0];
-        const ride = user.requestRide("Sofia", "Vidin");
+
+        const ride = user.requestRide("Sofia", "Vidin", driver);
 
         setTimeout(() => {
             driver.acceptRide(ride);
-            const rideNotification = RideNotificationFacotry.createNotification(ride);
+            const rideNotification = RideNotificationFactory.createNotification(ride);
             rideNotification.send();
         }, 1000);
+
     } catch (error) {
-        console.error('Error matching ride:', error);
-    };
-};
+        console.error('Error matching ride:', error.message);
+    }
+}
+
 
 async function getAvailableDrivers() {
     const mockDrivers = [
@@ -291,7 +316,7 @@ async function getAvailableDrivers() {
     });
 };
 
-async function processPayment(user, ride) {
+async function processPayment(user, ride, tipAmount = 0) {
     try {
         console.log(`🔄 Processing payment for ride from ${ride.pickupLocation} to ${ride.dropoffLocation} [${user.name}] 🔄`);
 
@@ -300,6 +325,8 @@ async function processPayment(user, ride) {
         if (paymentSuccess) {
             console.log('✅ Payment successful! ✅');
             ride.completeRide();
+            user.giveTip(ride, tipAmount)
+            //  Factory function
             const rideNotification = RideNotificationFactory.createNotification(ride);
             rideNotification.send();
         } else {
@@ -336,7 +363,7 @@ function test2() {
     const driver2 = new Driver("Bob", "Ford Mustang");
     const ride2 = user2.requestRide("Broadway", "5th Ave", driver2);
     driver2.acceptRide(ride2);
-    processPayment(user2, ride2);
+    processPayment(user2, ride2, 20);
 };
 
 // Test 3: Premium User with Discounted Fare
@@ -392,10 +419,22 @@ function test7() {
     ride.completeRide();
 };
 
+async function test8() {
+    const user2 = new User("Jane Smith", "2345-6789-8765-4321");
+    const user3 = new User("denkata", "2345-6789-8765-4321");
+    try {
+        await matchRide(user2);
+        await matchRide(user3);
+    } catch (error) {
+        console.log("Error in ride matching:", error.message);
+    };
+};
+
 // test1();
 // test2();
 // test3();
 // test4();
 // test5();
 // test6();
-test7();
+// test7();
+test8();
