@@ -204,7 +204,7 @@ class Ride {
     };
 
     notifyObservers() {
-        const uniqueObservers = [...new Set(this.observers)]; // Remove duplicates
+        const uniqueObservers = [...new Set(this.observers)];
         for (const observer of uniqueObservers) {
             observer.update(this);
         }
