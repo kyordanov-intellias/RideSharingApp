@@ -77,7 +77,7 @@ class User {
             await matchRide(this, pickupLocation);
         } catch (error) {
             console.error(`Failed to find a ride for ${this.name}: ${error.message}`);
-        };  
+        };
     };
 
     giveTip(ride, amount) {
@@ -189,7 +189,6 @@ class Ride {
         if (this.driver) {
             this.driver.available = true;
         };
-        this.notifyObservers();
         this.observers.forEach(observer => this.unsubscribeFromObserver(observer));
     };
 
@@ -205,13 +204,17 @@ class Ride {
     };
 
     notifyObservers() {
-        for (const observer of this.observers) {
-            observer.update(this)
-        };
+        const uniqueObservers = [...new Set(this.observers)]; // Remove duplicates
+        for (const observer of uniqueObservers) {
+            observer.update(this);
+        }
     };
 
     updateStatus(newStatus, details = '') {
+        if (this.status === newStatus) return;
+
         this.detailedStatus = newStatus;
+        this.status = newStatus;
         const notification = {
             searching_driver: '🔍 Searching for nearby drivers...',
             driver_assigned: '✅ Driver assigned and en route',
@@ -228,8 +231,8 @@ class Ride {
 
     startRide() {
         this.startTime = new Date();
-        this.updateStatus('in_progress');
-    };  
+        this.updateStatus('in progress...');
+    };
 };
 
 class PremiumUser extends User {
@@ -298,7 +301,7 @@ class RideNotificationFactory {
             return new ActiveRideNotification(ride);
         } else if (ride.status === 'completed') {
             return new CompletedRideNotification(ride);
-        };  
+        };
         return new PendingRideNotification(ride);
     };
 };
@@ -354,7 +357,7 @@ async function matchRide(user, pickupLocation) {
         const nearestDriver = await findNearestDriver(pickupLocation, availableDrivers);
         if (!nearestDriver) {
             throw new Error('No nearby drivers found');
-        };  
+        };
 
         const ride = user.requestRide(pickupLocation, "Destination", nearestDriver);
 
@@ -412,7 +415,6 @@ async function simulatePaymentProcessing() {
     });
 };
 
-
 // Test 1: Basic Ride Request and Completion
 function test1() {
     console.log("\n🧪 Test 1: Basic Ride Request and Completion");
@@ -422,7 +424,7 @@ function test1() {
     driver.acceptRide(ride);
     ride.startRide();
     ride.completeRide();
-}
+};
 
 // Test 2: Premium User with Discounted Fare and Rating System
 async function test2() {
@@ -435,7 +437,7 @@ async function test2() {
     driver.rateUser(4, "Pleasant customer");
     driver.showAverageRatinh();
     await processPayment(premiumUser, ride, 10);
-}
+};
 
 // Test 3: VIP Driver with Ride Filtering
 async function test3() {
@@ -448,7 +450,7 @@ async function test3() {
     vipDriver.rateUser(3, "Average experience");
     const ride2 = regularUser.requestRide("Times Square", "Central Park", vipDriver);
     vipDriver.acceptRide(ride2);
-}
+};
 
 // Test 4: Automatic Driver Matching and Location-based Assignment
 async function test4() {
@@ -466,7 +468,7 @@ async function test4() {
     await user.requestRideWithAutoMatch({ lat: 0, lng: 0 });
     await new Promise(resolve => setTimeout(resolve, 2000));
     console.log("Available drivers after matching:", app.getAvailableDrivers().length);
-}
+};
 
 // Test 5: Complex Scenario with Multiple Features
 async function test5() {
@@ -495,11 +497,11 @@ async function test5() {
         ride.completeRide();
         processPayment(premiumUser, ride, 20);
     }, 3000);
-}
+};
 
 console.log("🚀 Starting Tests 🚀");
 // test1();
 // test2();
 // test3();
 // test4();
-test5();
+// test5();
